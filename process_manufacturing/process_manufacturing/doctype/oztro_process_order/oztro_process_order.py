@@ -21,8 +21,8 @@ class OztroProcessOrder(Document):
 				add_item_in_table(self, process.scrap, "scrap")
 
 	def start_finish_processing(self, status):
-		self.status = status
-		self.save()
+		#self.status = status
+		#self.save()
 		return self.make_stock_entry(status)
 
 	def set_se_items_start(self, se):
@@ -81,7 +81,7 @@ class OztroProcessOrder(Document):
 
 		stock_entry = frappe.new_doc("Stock Entry")
 		stock_entry.purpose = "Manufacture"
-
+		stock_entry.oztro_process_order = self.name
 		stock_entry.from_warehouse = wip_warehouse
 		stock_entry.to_warehouse = fg_warehouse
 		if status == "Start":
@@ -100,3 +100,12 @@ def add_item_in_table(self, table_value, table_name):
 
 def clear_table(self, table_name):
 	self.set(table_name, [])
+
+@frappe.whitelist()
+def submit_se(doc, method):
+	if doc.oztro_process_order:
+		oztro_po = frappe.get_doc("Oztro Process Order", doc.oztro_process_order)
+		if oztro_po.status == "Open":
+			oztro_po.status = "Start"
+		elif oztro_po.status == "Start":
+			oztro_po.status = "Finish"
