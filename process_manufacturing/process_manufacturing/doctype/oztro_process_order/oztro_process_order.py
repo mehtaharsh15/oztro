@@ -27,7 +27,9 @@ class OztroProcessOrder(Document):
 
 	def set_se_items_start(self, se):
 		for item in self.materials:
-			se = self.set_se_items(se, item, frappe.db.get_value("Item", item.item, "default_warehouse"), se.from_warehouse)
+			src_wh = frappe.db.get_value("Item", item.item, "default_warehouse")
+			se = self.set_se_items(se, item, src_wh, se.from_warehouse)
+
 		return se
 
 	def set_se_items_finish(self, se):
@@ -86,14 +88,16 @@ class OztroProcessOrder(Document):
 			fg_warehouse = frappe.db.get_single_value("Manufacturing Settings", "default_fg_warehouse")
 
 		stock_entry = frappe.new_doc("Stock Entry")
-		stock_entry.purpose = "Manufacture"
 		stock_entry.oztro_process_order = self.name
 		stock_entry.from_warehouse = wip_warehouse
 		stock_entry.to_warehouse = fg_warehouse
 		if status == "Start":
+			stock_entry.purpose = "Material Transfer"
 			stock_entry = self.set_se_items_start(stock_entry)
 		if status == "Finish":
+			stock_entry.purpose = "Manufacture"
 			stock_entry = self.set_se_items_finish(stock_entry)
+
 		return stock_entry.as_dict()
 
 def add_item_in_table(self, table_value, table_name):
