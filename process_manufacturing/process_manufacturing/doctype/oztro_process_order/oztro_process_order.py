@@ -109,3 +109,4 @@ def submit_se(doc, method):
 			oztro_po.status = "Start"
 		elif oztro_po.status == "Start":
 			oztro_po.status = "Finish"
+		oztro_po.save()
