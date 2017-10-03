@@ -37,6 +37,9 @@ class OztroProcessOrder(Document):
 			for item in se.items:
 				item.s_warehouse = se.from_warehouse
 				item.t_warehouse = None
+		else:
+			for item in self.materials:
+			se = self.set_se_items(se, item, se.from_warehouse, None)
 		for item in self.finished_products:
 			se = self.set_se_items(se, item, None, se.to_warehouse)
 
