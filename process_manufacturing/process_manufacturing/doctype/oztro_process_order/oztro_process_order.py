@@ -31,9 +31,12 @@ class OztroProcessOrder(Document):
 		return se
 
 	def set_se_items_finish(self, se):
-		for item in self.materials:
-			se = self.set_se_items(se, item, se.from_warehouse, None)
-
+		se_materials = frappe.get_doc("Stock Entry",{"oztro_process_order": self.name})
+		if se_materials:
+			se.items = se_materials.items
+			for item in se.items:
+				item.s_warehouse = se.from_warehouse
+				item.t_warehouse = None
 		for item in self.finished_products:
 			se = self.set_se_items(se, item, None, se.to_warehouse)
 
