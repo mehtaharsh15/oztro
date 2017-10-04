@@ -112,7 +112,6 @@ class OztroProcessOrder(Document):
 			if self.costing_method == "Relative Sales Value":
 				basic_rate = (float(sale_value_of_pdt) * float(total_production_cost)) / float(total_sale_value)
 			if self.costing_method == "Physical measurement":
-				#basic_rate = (float(qty_of_pdt) * float(total_production_cost)) / float(total_qty)
 				basic_rate = float(total_production_cost) / float(total_qty)
 
 			return basic_rate
@@ -132,7 +131,7 @@ class OztroProcessOrder(Document):
 		stock_entry.from_warehouse = wip_warehouse
 		stock_entry.to_warehouse = fg_warehouse
 		if status == "Start":
-			stock_entry.purpose = "Material Transfer"
+			stock_entry.purpose = "Material Transfer for Manufacture"
 			stock_entry = self.set_se_items_start(stock_entry)
 		if status == "Finish":
 			stock_entry.purpose = "Manufacture"
