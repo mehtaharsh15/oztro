@@ -9,6 +9,13 @@ from frappe.utils import get_datetime, time_diff_in_hours
 from frappe import _
 
 class OztroProcessOrder(Document):
+	def validate(self):
+		#validate for items not in process
+		process_items = frappe.get_doc("Oztro Process", self.process_name).materials
+		for item in self.materials:
+			if not filter(lambda x: x.item == item.item, process_items):
+				frappe.throw(_("Item {0} - {1} cannot be part of this Process Order").format(item.item, item.item_name))
+
 	def on_submit(self):
 		if not self.wip_warehouse:
 			frappe.throw(_("Work-in-Progress Warehouse is required before Submit"))
@@ -193,6 +200,7 @@ class OztroProcessOrder(Document):
 			po_item = self.append(table_name, {})
 			po_item.item = item.item
 			po_item.item_name = item.item_name
+			po_item.uom = item.uom
 
 def validate_items(se_items, po_items):
 	#validate for items not in process order
