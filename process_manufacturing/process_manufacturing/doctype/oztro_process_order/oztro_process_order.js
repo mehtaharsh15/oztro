@@ -13,6 +13,8 @@ frappe.ui.form.on('Oztro Process Order', {
 				filters: {"department": frm.doc.department, "process_type": frm.doc.process_type}
 			}
 		});
+		frm.set_df_property("finished_products", "read_only", 1);
+		frm.set_df_property("scrap", "read_only", 1);
 	},
 	refresh: function(frm){
 		if(!frm.doc.__islocal && frm.doc.status == 'Submitted'){
