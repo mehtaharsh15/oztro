@@ -23,7 +23,10 @@ class OztroProcessOrder(Document):
 			frappe.throw(_("Target Warehouse is required before Submit"))
 		if self.scrap and not self.scrap_warehouse:
 			frappe.throw(_("Scrap Warehouse is required before submit"))
-		frappe.db.set(self, 'status', 'Submitted')
+		if not self.skip_material_transfer:
+			self.make_stock_entry("Submitted")
+		frappe.db.set(self, 'status', 'In Process')
+
 
 	def on_cancel(self):
 		stock_entry = frappe.db.sql("""select name from `tabStock Entry`
@@ -52,7 +55,7 @@ class OztroProcessOrder(Document):
 				self.end_dt = get_datetime()
 		self.flags.ignore_validate_update_after_submit = True
 		self.save()
-		return self.make_stock_entry(status)
+	 	self.make_stock_entry(status)
 
 	def set_se_items_start(self, se):
 		#set source and target warehouse
@@ -73,7 +76,9 @@ class OztroProcessOrder(Document):
 		se.from_warehouse = self.wip_warehouse
 		se.to_warehouse = self.fg_warehouse
 
-		se_materials = frappe.get_doc("Stock Entry",{"oztro_process_order": self.name, "docstatus": '1'})
+		se_materials = None
+		if not self.skip_material_transfer:
+			se_materials = frappe.get_doc("Stock Entry",{"oztro_process_order": self.name, "docstatus": '1'})
 		#get items to consume from previous stock entry or append to items
 		#TODO allow multiple raw material transfer
 		raw_material_cost = 0
@@ -192,7 +197,7 @@ class OztroProcessOrder(Document):
 			stock_entry.purpose = "Manufacture"
 			stock_entry = self.set_se_items_finish(stock_entry)
 
-		return stock_entry.as_dict()
+	 	stock_entry.submit()
 
 	def add_item_in_table(self, table_value, table_name):
 		self.set(table_name, [])
