@@ -2,26 +2,45 @@
 // For license information, please see license.txt
 
 frappe.ui.form.on('Oztro Process Order', {
-	refresh: function(frm){
-		if(!frm.doc.__islocal && frm.doc.status == 'Open'){
-			var start_btn = frm.add_custom_button(__('Start'), function(){
-				start_process_order(frm)
-			});
-			start_btn.addClass('btn-primary');
-		}
-		if(!frm.doc.__islocal && frm.doc.status == 'Start'){
-			var finish_btn = frm.add_custom_button(__('Finish'), function(){
-				finish_process_order(frm)
-			});
-			finish_btn.addClass('btn-primary')
-		}
-	},
-	process_type: function(frm){
+	setup: function (frm) {
+		frm.set_query("workstation", function () {
+			return {
+				filters: {"oztro_department": frm.doc.department}
+			}
+		});
 		frm.set_query("process_name", function () {
 			return {
 				filters: {"department": frm.doc.department, "process_type": frm.doc.process_type}
 			}
 		});
+	},
+	refresh: function(frm){
+		if(!frm.doc.__islocal && frm.doc.status == 'Submitted'){
+			var start_btn = frm.add_custom_button(__('Start'), function(){
+				prompt_for_qty(frm, "materials", "Enter Raw Material Quantity", true, function () {
+					process_production(frm, "Submitted");
+				});
+			});
+			start_btn.addClass('btn-primary');
+		}
+		if(!frm.doc.__islocal && frm.doc.status == 'In Process'){
+			var finish_btn = frm.add_custom_button(__('Complete'), function(){
+				prompt_for_qty(frm, "finished_products", "Enter Produced Quantity", true, function () {
+					if(frm.doc.scrap){
+							prompt_for_qty(frm, "scrap", "Enter Scrap Quantity", false, function() {
+								prompt_for_hours(frm, function() {
+									process_production(frm, "In Process");
+								});
+							});
+						}else {
+							prompt_for_hours(frm, function() {
+								process_production(frm, "In Process");
+							});
+						}
+						});
+			});
+			finish_btn.addClass('btn-primary')
+		}
 	},
 	department: function(frm){
 		if(frm.doc.department){
@@ -36,11 +55,6 @@ frappe.ui.form.on('Oztro Process Order', {
 					frappe.model.set_value(frm.doctype,frm.docname, "fg_warehouse", data.message.fg_warehouse);
 					frappe.model.set_value(frm.doctype,frm.docname, "scrap_warehouse", data.message.scrap_warehouse);
 					frappe.model.set_value(frm.doctype,frm.docname, "src_warehouse", data.message.src_warehouse);
-				}
-			});
-			frm.set_query("process_name", function () {
-				return {
-					filters: {"department": frm.doc.department, "process_type": frm.doc.process_type}
 				}
 			});
 		}
@@ -61,82 +75,68 @@ frappe.ui.form.on('Oztro Process Order', {
 	}
 });
 
-var start_process_order = function(frm){
-	if(frm.doc.materials){
-		for(item in frm.doc.materials){
-			if(frm.doc.materials[item].quantity <= 0){
-				frappe.msgprint('Quantity of material should be greater than zero.', "Validation Error");
-				frappe.throw()
+var prompt_for_qty = function (frm, table, title, qty_required, callback) {
+	// if(table && !qty_required){
+	// 	callback();
+	// }
+	let fields = []
+	$.each(frm.doc[table] || [], function(i, row) {
+		fields.push({
+			fieldtype: "Float",
+			label: __("{0} - {1}", [row.item, row.item_name]),
+			fieldname: row.name
+			//value: row.quantity //value is ignored
+		});
+	})
+	frappe.prompt(
+		fields,
+		function(data) {
+			let item_qty = false;
+			frm.doc[table].forEach(function(line) {
+				if(data[line.name] > 0){item_qty = true;}
+				frappe.model.set_value(line.doctype, line.name, "quantity", data[line.name]);
+			});
+			if (qty_required && !item_qty){
+				frappe.throw("Cannot start/finish Process Order with zero quantity");
 			}
-		}
-		frappe.call({
-			doc: frm.doc,
-			method: "start_finish_processing",
-			args:{
-				"status": "Start"
-			},
-			callback: function(r) {
-				frm.reload_doc()
+			callback();
+		},
+		__(title),
+		__("Confirm")
+	);
+}
+
+var prompt_for_hours = function(frm, callback){
+	//TODO datetime diff returns 0 for minutes
+	let hours = frappe.datetime.get_hour_diff(frappe.datetime.now_datetime(), frm.doc.start_dt)
+	frappe.prompt(
+		[{fieldtype: "Float",
+			label: __("Hours"),
+			fieldname: "hours",
+			description: __("Hours as per start of process is {0}", [hours]),
+		}],
+		function(data) {
+			let item_qty = false;
+			frappe.model.set_value(frm.doctype, frm.doc.name, "operation_hours", data.hours);
+			callback();
+		},
+		__("Update hours of operation"),
+		__("Confirm")
+	);
+}
+
+var process_production = function (frm, status) {
+	frappe.call({
+		doc: frm.doc,
+		method: "start_finish_processing",
+		args:{
+			"status": status
+		},
+		callback: function(r) {
+			if (r.message){
 				var doclist = frappe.model.sync(r.message);
 				frappe.set_route("Form", doclist[0].doctype, doclist[0].name);
 			}
-		});
-	}
+		}
+	});
 }
-
-var finish_process_order = function(frm){
-	if(frm.doc.finished_products){
-		frappe.confirm(
-				'Are you sure to Finish?',
-				function(){
-					frappe.call({
-						doc: frm.doc,
-						method: "start_finish_processing",
-						args:{
-							"status": "Finish"
-						},
-						callback: function(r) {
-							frm.reload_doc()
-							var doclist = frappe.model.sync(r.message);
-							frappe.set_route("Form", doclist[0].doctype, doclist[0].name);
-						}
-					});
-				},
-				function(){
-					window.close();
-				}
-		)
-	}
-}
-
-/*var start_prompt = function(frm) {
-	let fields = []
-	$.each(frm.doc.finished_products || [], function(i, row) {
-		console.log(i);
-		console.log(row);
-		fields.push({
-			fieldtype: "Float",
-			label: __("Quantity of {0} for {1}", [row.item_name,"Processing"]),
-			fieldname: "qty_"+row.name
-		});
-	})
-	/*frm.doc.materials.forEach(function(frm) {
-		console.log("ASSSSSSSSSSSSS");
-	})*/
-	/*frappe.prompt(
-		fields,
-		function(data) {
-			console.log(data);
-			frappe.call({
-				doc: frm.doc,
-				method: "start_processing",
-				args: {
-					'qty': data.qty
-				},
-				callback: function(r) {
-					//refresh_field("materials");
-					frm.reload_doc()
-				}
-			});
-		}, __("Select Quantity"), __("Make"));
-}*/
