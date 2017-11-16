@@ -7,6 +7,8 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import get_datetime, time_diff_in_hours
 from frappe import _
+from erpnext.stock.get_item_details import get_bin_details
+
 
 class OztroProcessOrder(Document):
 	def validate(self):
@@ -23,10 +25,9 @@ class OztroProcessOrder(Document):
 			frappe.throw(_("Target Warehouse is required before Submit"))
 		if self.scrap and not self.scrap_warehouse:
 			frappe.throw(_("Scrap Warehouse is required before submit"))
-		if not self.skip_material_transfer:
-			self.make_stock_entry("Submitted")
+		self.make_stock_entry("Submitted")
 		frappe.db.set(self, 'status', 'In Process')
-
+		frappe.db.set(self, 'start_dt', get_datetime())
 
 	def on_cancel(self):
 		stock_entry = frappe.db.sql("""select name from `tabStock Entry`
@@ -53,9 +54,19 @@ class OztroProcessOrder(Document):
 		if status == "In Process":
 			if not self.end_dt:
 				self.end_dt = get_datetime()
+				self.status = "Completed"
 		self.flags.ignore_validate_update_after_submit = True
 		self.save()
-	 	self.make_stock_entry(status)
+	 	se = self.make_stock_entry(status)
+		if status == "In Process":
+			self.copy_batch_no_to_finished_goods(se)
+
+	def copy_batch_no_to_finished_goods(self, se):
+		for item in self.finished_products:
+			if not item.batch_no:
+				se_item = filter(lambda x: (x.item_code == item.item and x.qty == item.quantity), se.items)
+				if se_item:
+					frappe.db.set_value("Oztro Process Order Item", item.name, "batch_no", se_item[0].batch_no)
 
 	def set_se_items_start(self, se):
 		#set source and target warehouse
@@ -77,8 +88,7 @@ class OztroProcessOrder(Document):
 		se.to_warehouse = self.fg_warehouse
 
 		se_materials = None
-		if not self.skip_material_transfer:
-			se_materials = frappe.get_doc("Stock Entry",{"oztro_process_order": self.name, "docstatus": '1'})
+		se_materials = frappe.get_doc("Stock Entry",{"oztro_process_order": self.name, "docstatus": '1'})
 		#get items to consume from previous stock entry or append to items
 		#TODO allow multiple raw material transfer
 		raw_material_cost = 0
@@ -158,6 +168,7 @@ class OztroProcessOrder(Document):
 			se_item = se.append("items")
 			se_item.item_code = item.item
 			se_item.qty = item.quantity
+			se_item.batch_no = item.batch_no
 			se_item.s_warehouse = s_wh
 			se_item.t_warehouse = t_wh
 			se_item.item_name = item_name
@@ -196,8 +207,9 @@ class OztroProcessOrder(Document):
 		if status == "In Process":
 			stock_entry.purpose = "Manufacture"
 			stock_entry = self.set_se_items_finish(stock_entry)
-
+		stock_entry.save()
 	 	stock_entry.submit()
+		return stock_entry
 
 	def add_item_in_table(self, table_value, table_name):
 		self.set(table_name, [])
@@ -206,6 +218,9 @@ class OztroProcessOrder(Document):
 			po_item.item = item.item
 			po_item.item_name = item.item_name
 			po_item.uom = item.uom
+			if table_name == "materials" and self.src_warehouse:
+				po_item.available_qty = get_bin_details(item.item, self.src_warehouse)['actual_qty']
+
 
 def validate_items(se_items, po_items):
 	#validate for items not in process order
