@@ -19,6 +19,12 @@ class OztroProcessOrder(Document):
 				frappe.throw(_("Item {0} - {1} cannot be part of this Process Order").format(item.item, item.item_name))
 
 	def on_submit(self):
+		has_input = False
+		for item in self.materials:
+			if item.quantity > 0:
+				has_input = True
+		if not has_input:
+			frappe.throw("Please enter quantity of raw materials")
 		if not self.wip_warehouse:
 			frappe.throw(_("Work-in-Progress Warehouse is required before Submit"))
 		if not self.fg_warehouse:
@@ -51,10 +57,6 @@ class OztroProcessOrder(Document):
 				self.add_item_in_table(process.scrap, "scrap")
 
 	def start_finish_processing(self, status):
-		if status == "In Process":
-			if not self.end_dt:
-				self.end_dt = get_datetime()
-				self.status = "Completed"
 		self.flags.ignore_validate_update_after_submit = True
 		self.save()
 	 	se = self.make_stock_entry(status)
@@ -247,6 +249,7 @@ def manage_se_submit(se, po):
 		po.start_dt = get_datetime()
 	elif po.status == "In Process":
 		po.status = "Completed"
+		po.end_dt = get_datetime()
 	elif po.status in ["Completed", "Cancelled"]:
 		frappe.throw("You cannot make entries against Completed/Cancelled Process Orders")
 	po.flags.ignore_validate_update_after_submit = True
