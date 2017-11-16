@@ -10,7 +10,7 @@ frappe.ui.form.on('Oztro Process Order', {
 		});
 		frm.set_query("process_name", function () {
 			return {
-				filters: {"department": frm.doc.department, "process_type": frm.doc.process_type}
+				filters: {"docstatus": 1, "department": frm.doc.department, "process_type": frm.doc.process_type}
 			}
 		});
 		frm.set_df_property("finished_products", "read_only", 1);
@@ -43,6 +43,8 @@ frappe.ui.form.on('Oztro Process Order', {
 			});
 			finish_btn.addClass('btn-primary')
 		}
+		frm.set_indicator_formatter('item',
+			function(doc) { return (doc.quantity<=doc.available_qty) ? "green" : "orange" })
 	},
 	department: function(frm){
 		if(frm.doc.department){
@@ -97,6 +99,9 @@ var prompt_for_qty = function (frm, table, title, qty_required, callback) {
 			frm.doc[table].forEach(function(line) {
 				if(data[line.name] > 0){item_qty = true;}
 				frappe.model.set_value(line.doctype, line.name, "quantity", data[line.name]);
+				if(table!="materials"){
+					frappe.model.set_value(line.doctype, line.name, "available_qty", data[line.name]);
+				}
 			});
 			if (qty_required && !item_qty){
 				frappe.throw("Cannot start/finish Process Order with zero quantity");
@@ -104,7 +109,7 @@ var prompt_for_qty = function (frm, table, title, qty_required, callback) {
 			callback();
 		},
 		__(title),
-		__("Confirm")
+		__("Proceed")
 	);
 }
 
@@ -139,3 +144,83 @@ var process_production = function (frm, status) {
 		}
 	});
 }
+
+frappe.ui.form.on('Oztro Process Order Item', {
+	item: function(frm, cdt, cdn) {
+		if (!frm.doc.src_warehouse){
+			frappe.throw("Please select the Source Warehouse");
+		}
+		var d = locals[cdt][cdn];
+		if(d.item) {
+			return frappe.call({
+				method: "erpnext.stock.get_item_details.get_bin_details",
+				args: {
+						'item_code': d.item,
+						'warehouse': frm.doc.src_warehouse
+				},
+				callback: function(r) {
+					if(r.message) {
+						frappe.model.set_value(cdt, cdn, "available_qty", r.message.actual_qty)
+						refresh_field("items");
+					}
+				}
+			});
+		}
+	},
+	batch_no: function (frm, cdt, cdn) {
+		if (!frm.doc.src_warehouse){
+			frappe.throw("Please select the Source Warehouse");
+		}
+		var d = locals[cdt][cdn];
+		if(d.item && d.batch_no) {
+			return frappe.call({
+				method: "erpnext.stock.get_item_details.get_batch_qty",
+				args: {
+						'batch_no': d.batch_no,
+						'warehouse': frm.doc.src_warehouse,
+						'item_code': d.item
+				},
+				callback: function(r) {
+					if(r.message) {
+						frappe.model.set_value(cdt, cdn, "available_qty", r.message.actual_batch_qty)
+						refresh_field("items");
+					}
+				}
+			});
+		}
+	}
+});
+
+me.frm.set_query("batch_no", "materials", function(doc, cdt, cdn) {
+	var d = locals[cdt][cdn];
+	if(!d.item){
+		frappe.throw("Please select Item");
+	}
+	return {
+		filters: {
+			item: d.item
+		}
+	};
+});
+me.frm.set_query("batch_no", "finished_products", function(doc, cdt, cdn) {
+	var d = locals[cdt][cdn];
+	if(!d.item){
+		frappe.throw("Please select Item");
+	}
+	return {
+		filters: {
+			item: d.item
+		}
+	};
+});
+me.frm.set_query("batch_no", "scrap", function(doc, cdt, cdn) {
+	var d = locals[cdt][cdn];
+	if(!d.item){
+		frappe.throw("Please select Item");
+	}
+	return {
+		filters: {
+			item: d.item
+		}
+	};
+});
